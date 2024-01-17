@@ -197,7 +197,8 @@ fun FinalScoreScreen(
     userData: UserData?,
     navController: NavHostController,
     finalScore: Int, modifier: Modifier = Modifier) {
-    val database = Firebase.database("https://quizapp-3ee94-default-rtdb.asia-southeast1.firebasedatabase.app/")
+    //TODO: CHANGE THE FIREBASE URL OR IF YOU WANT TO USE MINE THEN FINE
+    val database = Firebase.database("FirebaseUrl")
     val myRef = database.getReference(userData?.userId.toString())
     var congrats by remember { mutableStateOf("Congratulations!") }
     var textFinalScore by remember { mutableStateOf("Your final score is") }

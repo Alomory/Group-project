@@ -36,9 +36,6 @@ fun QuizView(
     var correct by remember { mutableStateOf(0) }
     var total by remember { mutableStateOf(0) }
     var isFinished by remember { mutableStateOf(false) }
-    val database = Firebase.database("https://quizapp-3ee94-default-rtdb.asia-southeast1.firebasedatabase.app/")
-    val myRef = database.getReference(userData?.userId.toString())
-//    myRef.ge
     val url = "https://opentdb.com/api.php?amount=1"
     fun getQuestion() {
         thread {
