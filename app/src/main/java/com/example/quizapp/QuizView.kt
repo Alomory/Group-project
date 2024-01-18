@@ -133,7 +133,7 @@ fun QuizView(
                     navController.navigate("finalScore?score=${correct}")
                 },
             ) {
-                Text("Finish")
+                Text("Give up >_<")
             }
         }
     }

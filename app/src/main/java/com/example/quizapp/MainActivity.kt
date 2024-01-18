@@ -12,9 +12,15 @@ import androidx.activity.result.IntentSenderRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.Button
+import androidx.compose.material3.Divider
 import androidx.compose.material3.ElevatedButton
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
@@ -26,11 +32,14 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -56,6 +65,8 @@ import com.google.firebase.database.DatabaseError
 import com.google.firebase.database.ValueEventListener
 import com.google.firebase.database.database
 import kotlinx.coroutines.launch
+import org.json.JSONObject
+import kotlin.math.log
 
 
 class MainActivity : ComponentActivity() {
@@ -196,47 +207,44 @@ fun HomePage(
 fun FinalScoreScreen(
     userData: UserData?,
     navController: NavHostController,
-    finalScore: Int, modifier: Modifier = Modifier) {
-    //TODO: CHANGE THE FIREBASE URL OR IF YOU WANT TO USE MINE THEN FINE
-    val database = Firebase.database("FirebaseUrl")
-    val myRef = database.getReference(userData?.userId.toString())
+    finalScore: Int,
+    modifier: Modifier = Modifier
+) {
+    val database = Firebase.database("https://quizapp-3ee94-default-rtdb.asia-southeast1.firebasedatabase.app/")
+    val myRef = database.getReference("user-score")
+
     var congrats by remember { mutableStateOf("Congratulations!") }
     var textFinalScore by remember { mutableStateOf("Your final score is") }
-    Column(
-        modifier = modifier
-            .padding(24.dp)
-            .fillMaxSize(),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center,
-    ) {
+    var topUsers by remember { mutableStateOf(mutableListOf<UserData>()) }
 
-
+    // Use orderByChild("score") and limitToLast(3) to get the top 3 scores
+    // Fetch all data and then sort it on the client side
+    LaunchedEffect(topUsers){
         myRef.addListenerForSingleValueEvent(object : ValueEventListener {
             override fun onDataChange(snapshot: DataSnapshot) {
-                if (snapshot.exists()) {
-                    val fromFirebase = snapshot.value // This value is of type Any
+                val allUsers = mutableListOf<UserData>()
 
-                    if (fromFirebase is Long) {
-                        // If the value is a Long, you can convert it to Int
-                        val intValue = fromFirebase.toLong()
+                for (childSnapshot in snapshot.children) {
+                    val userId = childSnapshot.key
+                    val username = childSnapshot.child("username").getValue(String::class.java)
+                    val score = childSnapshot.child("score").getValue(Long::class.java)
 
-                        // Now you can compare it with the correct answers or perform other actions
-                        if (intValue > finalScore) {
-                            Log.e("firebase", "Value in firebase is less than correct")
-                            congrats = "Shame on you!"
-                            textFinalScore = "You don't feel shy getting"
-
-                        } else {
-                            myRef.setValue(finalScore)
-                            Log.e("firebase", "Value in firebase is greater than correct")
-                            congrats = "Congratulations!"
-                            textFinalScore = "Your final score is"
-                        }
-                    } else {
-                        Log.e("firebase", "Data type is not long")
+                    if (userId != null && username != null && score != null) {
+                        val userData = UserData(userId, username, score.toString())
+                        allUsers.add(userData)
                     }
-                } else {
-                    Log.e("firebase", "There is no data in firebase yet")
+                }
+
+                // Sort allUsers based on score in descending order
+                allUsers.sortByDescending { it.profilePictureUrl}
+
+                // Take the top 3 users
+                topUsers = allUsers.take(3).toMutableList()
+
+                // Now, topUsers list contains the top 3 users with the highest scores
+                // You can use this list to display the high scores in your UI
+                for (user in topUsers) {
+                    Log.d("TopUser", "${user.username} - Score: ${user.profilePictureUrl}")
                 }
             }
 
@@ -245,17 +253,198 @@ fun FinalScoreScreen(
                 Log.e("firebase", "Error getting data", error.toException())
             }
         })
-        Text(congrats, fontSize = 26.sp)
-        Text("$textFinalScore $finalScore", fontSize = 24.sp)
+    }
 
+    LaunchedEffect(userData, finalScore) {
+        myRef.child(userData?.userId.toString()).addListenerForSingleValueEvent(object : ValueEventListener {
+            override fun onDataChange(snapshot: DataSnapshot) {
+                if (snapshot.exists()) {
+                    val fromFirebase = snapshot.value
+
+                    when (fromFirebase) {
+                        is Map<*, *> -> {
+                            val username = fromFirebase["username"]
+                            val score = fromFirebase["score"] as Long
+
+                            if (score < finalScore) {
+                                val updateMap = mapOf(
+                                    "username" to userData?.username.toString(),
+                                    "score" to finalScore
+                                )
+                                myRef.child(userData?.userId.toString()).updateChildren(updateMap).addOnCompleteListener {
+                                    if (it.isSuccessful) {
+                                        congrats = "Congratulations ${username.toString().split(" ")[0]}!"
+                                        textFinalScore =
+                                            "Your Highest score is"
+                                    } else {
+                                        // Handle update failure
+                                        Log.e("firebase", "Failed to update data: ${it.exception}")
+                                    }
+                                }
+                            } else {
+                                congrats = "You need to improve ${username.toString().split(" ")[0]}!"
+                                textFinalScore = "Try again after one year"
+                            }
+                        }
+                        else -> {
+                            Log.e("firebase", "Unknown data type: ${fromFirebase?.javaClass}")
+                        }
+                    }
+                } else {
+                    val updateMap = mapOf(
+                        "username" to userData?.username.toString(),
+                        "score" to finalScore
+                    )
+                    myRef.child(userData?.userId.toString()).updateChildren(updateMap).addOnCompleteListener {
+                        if (it.isSuccessful) {
+                            Log.e("firebase", "Value set successfully")
+                        } else {
+                            // Handle set value failure
+                            Log.e("firebase", "Failed to set value: ${it.exception}")
+                        }
+                    }
+                }
+            }
+
+            override fun onCancelled(error: DatabaseError) {
+                // Handle errors
+                Log.e("firebase", "Error getting data", error.toException())
+            }
+        })
+    }
+
+    Column(
+        modifier = modifier
+            .padding(24.dp)
+            .fillMaxSize(),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center,
+    ) {
+        Text("Top 3 Heights Score", fontSize = 24.sp, fontWeight = FontWeight.Bold)
+        Spacer(modifier = Modifier.height(10.dp))
+        Divider()
+        Spacer(modifier = Modifier.height(20.dp))
+        LazyColumn {
+            items(topUsers) { users ->
+                Text(
+                    text = "${users.username.toString()}: ${users.profilePictureUrl.toString()}",
+                    fontSize = 18.sp, fontWeight = FontWeight.Bold
+                )
+            }
+        }
+
+        Spacer(modifier = Modifier.height(20.dp))
+        Divider()
+        Spacer(modifier = Modifier.height(20.dp))
+        Text(congrats, fontSize = 20.sp)
+        Text("$textFinalScore $finalScore", fontSize = 18.sp)
+        Spacer(modifier = Modifier.height(20.dp))
         Button(onClick = {
             navController.navigate("home")
-
         }) {
             Text(text = "Try Again..!")
         }
     }
 }
+
+//@Composable
+//fun FinalScoreScreen(
+//    userData: UserData?,
+//    navController: NavHostController,
+//    finalScore: Int, modifier: Modifier = Modifier) {
+//    val database = Firebase.database("https://quizapp-3ee94-default-rtdb.asia-southeast1.firebasedatabase.app/")
+//    val myRef = database.getReference("user-score")
+//
+//    var congrats by remember { mutableStateOf("Congratulations!") }
+//    var textFinalScore by remember { mutableStateOf("Your final score is") }
+//    Column(
+//        modifier = modifier
+//            .padding(24.dp)
+//            .fillMaxSize(),
+//        horizontalAlignment = Alignment.CenterHorizontally,
+//        verticalArrangement = Arrangement.Center,
+//    ) {
+//
+////            Text(text = "Heights Score")
+////            Divider()
+////            Spacer(modifier = Modifier.height(20.dp))
+//
+//
+//
+//        myRef.addListenerForSingleValueEvent(object : ValueEventListener {
+//            override fun onDataChange(snapshot: DataSnapshot) {
+//                if (snapshot.exists()) {
+//                    val userRef = myRef.child(userData?.userId.toString())
+//                    val fromFirebase = snapshot.child(userRef.key.toString()).value // This value is of type Any
+//                    when (fromFirebase) {
+//                        is Map<*, *> -> {
+//                            // Handle map case if needed
+//                            // For example, you can check map entries
+//                            val username = fromFirebase["username"]
+//                            val score = fromFirebase["score"] as Long
+//
+//                            if (score < finalScore) {
+//                                val updateMap = mapOf(
+//                                    "username" to userData?.username.toString(),
+//                                    "score" to finalScore
+//                                )
+//                                userRef.updateChildren(updateMap).addOnCompleteListener {
+//                                    if (it.isSuccessful) {
+//                                        Log.e("firebase", "Value($score) in firebase is greater than correct")
+//                                        congrats = "Congratulations!"
+//                                        textFinalScore =
+//                                            "${username.toString().split(" ")} you got a new score..\nYour final score is"
+//                                    } else {
+//                                        // Handle update failure
+//                                        Log.e("firebase", "Failed to update data: ${it.exception}")
+//                                    }
+//                                }
+//                            } else {
+//                                Log.e(
+//                                    "firebase",
+//                                    "Value ($score) in ($username) firebase is less than correct"
+//                                )
+//                                congrats = "Shame on you ${username.toString().split(" ")[0]}!"
+//                                textFinalScore = "You don't feel shy getting"
+//                            }
+//                        }
+//                        else -> {
+//                            Log.e("firebase", "Unknown data type: ${fromFirebase?.javaClass}")
+//                        }
+//                    }
+//                } else {
+//                    // If the snapshot doesn't exist, set a new value
+//                    val updateMap = mapOf(
+//                        "username" to userData?.username.toString(),
+//                        "score" to finalScore
+//                    )
+//                    myRef.updateChildren(updateMap).addOnCompleteListener {
+//                        if (it.isSuccessful) {
+//                            Log.e("firebase", "Value set successfully")
+//                        } else {
+//                            // Handle set value failure
+//                            Log.e("firebase", "Failed to set value: ${it.exception}")
+//                        }
+//                    }
+//                }
+//            }
+//
+//            override fun onCancelled(error: DatabaseError) {
+//                // Handle errors
+//                Log.e("firebase", "Error getting data", error.toException())
+//            }
+//        })
+//        Text(congrats, fontSize = 26.sp)
+//        Text("$textFinalScore $finalScore", fontSize = 24.sp)
+//
+//        Button(onClick = {
+//            navController.navigate("home")
+//
+//        }) {
+//            Text(text = "Try Again..!")
+//        }
+//    }
+//}
 
 //@Preview(showBackground = true)
 //@Composable
