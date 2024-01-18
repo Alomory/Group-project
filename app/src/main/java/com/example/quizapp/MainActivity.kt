@@ -236,7 +236,7 @@ fun FinalScoreScreen(
                 }
 
                 // Sort allUsers based on score in descending order
-                allUsers.sortByDescending { it.profilePictureUrl}
+                allUsers.sortByDescending { (it.profilePictureUrl?.toLong())}
 
                 // Take the top 3 users
                 topUsers = allUsers.take(3).toMutableList()
